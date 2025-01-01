@@ -27,24 +27,39 @@ class QLearningAgent:
         self.action_space = action_space
 
     def select_action(self, state):
+        """
+        Selects an action using epsilon-greedy strategy.
+
+        Args:
+            state (tuple): The current state of the agent.
+
+        Returns:
+            int: The action to take (0 = up, 1 = down, 2 = left, 3 = right).
+        """
+        position = state  # Extract position from state tuple
         if random.uniform(0, 1) < self.epsilon:
-            return random.randint(0, self.action_space - 1) 
-        return np.argmax(self.q_table[state])
+            return random.randint(0, self.action_space - 1)  # Explore
+        return np.argmax(self.q_table[position])  # Exploit
 
     def update(self, state, action, reward, next_state):
         """
-        Updates the Q-table using the Bellman equation.
+        Updates the Q-table based on the agent's experience.
 
         Args:
             state (tuple): The current state.
             action (int): The action taken.
             reward (float): The reward received.
-            next_state (tuple): The next state after the action.
+            next_state (tuple): The resulting state.
         """
-        best_next_action = np.argmax(self.q_table[next_state])
-        td_target = reward + self.gamma * self.q_table[next_state][best_next_action]
-        td_error = td_target - self.q_table[state][action]
-        self.q_table[state][action] += self.alpha * td_error
+        position = state  # Extract position
+        next_position = next_state  # Extract next position
+        best_next_action = np.argmax(self.q_table[next_position])
+        td_target = reward + self.gamma * self.q_table[next_position][best_next_action]
+        td_error = td_target - self.q_table[position][action]
+        self.q_table[position][action] += self.alpha * td_error
 
     def decay_epsilon(self):
-        self.epsilon *= self.epsilon_decay
+        """
+        Reduces the exploration rate (epsilon) after each episode.
+        """
+        self.epsilon = max(0.1, self.epsilon * self.epsilon_decay)
