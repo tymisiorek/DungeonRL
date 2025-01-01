@@ -24,6 +24,9 @@ class ComplexGridEnvironment:
         self.goal_position = [self.grid_size - 1, self.grid_size - 1]
         self.goal_unlocked = not self.has_key
 
+        # Initialize previous_distance
+        self.previous_distance = abs(self.agent_position[0] - self.goal_position[0]) + abs(self.agent_position[1] - self.goal_position[1])
+
         # Place obstacles
         self.obstacles = self._generate_positions(self.num_obstacles)
 
@@ -41,6 +44,7 @@ class ComplexGridEnvironment:
             self.key_position = None
 
         return self._get_state()
+
 
     def _generate_positions(self, count, exclude=None):
         """
@@ -73,18 +77,14 @@ class ComplexGridEnvironment:
         """
         Executes an action and updates the agent's position and environment.
 
-        Args:
-            action (int): The action to perform (0 = up, 1 = down, 2 = left, 3 = right).
-
         Returns:
             tuple: The next state, reward, and a boolean indicating if the episode is done.
         """
-        # Move the agent
-        if action == 0 and self.agent_position[0] > 0:          # Up
+        if action == 0 and self.agent_position[0] > 0:  # Up
             self.agent_position[0] -= 1
         elif action == 1 and self.agent_position[0] < self.grid_size - 1:  # Down
             self.agent_position[0] += 1
-        elif action == 2 and self.agent_position[1] > 0:         # Left
+        elif action == 2 and self.agent_position[1] > 0:  # Left
             self.agent_position[1] -= 1
         elif action == 3 and self.agent_position[1] < self.grid_size - 1:  # Right
             self.agent_position[1] += 1
@@ -94,25 +94,31 @@ class ComplexGridEnvironment:
 
         # Check for obstacles
         if current_pos in self.obstacles:
-            reward -= 10  # Penalty for hitting an obstacle
+            reward -= 10
             self.agent_position = [0, 0]  # Reset to start
 
         # Check for traps
         elif current_pos in self.traps:
-            reward -= 5  # Extra penalty for stepping on a trap
+            reward -= 5
 
         # Check for key
         elif self.has_key and current_pos == self.key_position:
-            reward += 5  # Reward for collecting the key
+            reward += 5
             self.goal_unlocked = True
-            self.key_position = None  # Remove the key from the grid
+            self.key_position = None
 
         # Check for goal
-        done = (current_pos == tuple(self.goal_position) and self.goal_unlocked)
+        done = current_pos == tuple(self.goal_position) and self.goal_unlocked
         if done:
-            reward += 10  # Big reward for reaching the goal
+            reward += 100  # Large reward for success
+
+        # Encourage progress toward goal
+        current_distance = abs(self.agent_position[0] - self.goal_position[0]) + abs(self.agent_position[1] - self.goal_position[1])
+        reward += max(0, self.previous_distance - current_distance) * 5
+        self.previous_distance = current_distance
 
         return self._get_state(), reward, done
+
 
     def render(self, path=None):
         """
