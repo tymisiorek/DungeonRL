@@ -1,162 +1,123 @@
-from environment.grid_environment import ComplexGridEnvironment
-from agents.q_learning_agent import QLearningAgent
-from agents.dqn_agent import DQNAgent
+# main.py
+
 import matplotlib.pyplot as plt
-from PIL import Image
 import numpy as np
+from agents.ppo_agent import PPOAgent
+from environment.grid_environment import ComplexGridEnvironment
 import seaborn as sns
+import imageio  # Add imageio for GIF creation
 
 
-def visualize_extended_dungeon_gif(grid_size=5, episodes=500, visualize_every=50, output_file="extended_dungeon.gif", use_dqn=False):
+def create_gif(model, env, output_file="agent_path.gif", episodes=5):
     """
-    Visualizes the agent navigating the dungeon and creates a GIF of the agent's performance.
+    Creates a dynamic GIF of the agent's path across multiple episodes.
 
     Args:
-        grid_size (int): Size of the dungeon grid.
-        episodes (int): Number of episodes to train the agent.
-        visualize_every (int): Save a frame every `visualize_every` episodes.
+        model: Trained PPO model.
+        env: Environment to evaluate.
         output_file (str): Name of the output GIF file.
-        use_dqn (bool): Whether to use DQNAgent or QLearningAgent.
+        episodes (int): Number of episodes to include in the GIF.
     """
-    env = ComplexGridEnvironment(grid_size=grid_size, num_obstacles=3, num_traps=2, has_key=True)
-    if use_dqn:
-        agent = DQNAgent(
-            state_dim=grid_size * grid_size,  # Flattened grid as input
-            action_dim=4,  # Four actions (up, down, left, right)
-        )
-    else:
-        agent = QLearningAgent(
-            state_space=(grid_size, grid_size),
-            action_space=4
-        )
+    # Set DPI to ensure the figure size matches the expected pixel dimensions
+    dpi = 100
+    figsize = (6, 6)  # 6x6 inches
 
-    frames = []
-    success_count = 0
-    failed_episodes = []
-    step_limit = 100
-    episode_rewards = []  # Track total rewards per episode
-    success_rate = []  # Track success rate over time
-    path_visits = np.zeros((grid_size, grid_size))  # Track path visits for heatmap
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+    ims = []  # Store frames for the GIF
+    cumulative_visits = np.zeros((env.grid_size, env.grid_size))  # Track cumulative visits
 
     for episode in range(episodes):
-        state = env.reset()
+        obs, _ = env.reset()  # Reset environment and extract observation
         done = False
-        path = []
-        total_reward = 0
+        path = []  # Track the agent's path
+        steps = 0
+        max_steps = 1000  # Prevent infinite loops
 
-        for step in range(step_limit):
-            flat_state = env._get_state()
-            path.append(tuple(env.agent_position))
-            action = agent.select_action(flat_state)
-            next_state, reward, done = env.step(action)
+        print(f"=== Starting Episode {episode + 1} ===")
 
-            if use_dqn:
-                agent.store_experience(flat_state, action, reward, next_state.flatten(), done)
-                agent.train()
-            else:
-                agent.update(flat_state, action, reward, next_state)
+        while not done and steps < max_steps:
+            # Predict action using the model
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
 
-            state = next_state
-            total_reward += reward
-            path_visits[tuple(env.agent_position)] += 1
+            # Update path and cumulative visits
+            agent_pos = tuple(env.agent_position)
+            path.append(agent_pos)
+            cumulative_visits[agent_pos] += 1
 
-            if done:
-                success_count += 1
-                break
+            # Render the grid
+            grid = env.render()
+            ax.clear()
+            ax.imshow(np.zeros((env.grid_size, env.grid_size)), cmap="gray", alpha=0.8)
 
-        episode_rewards.append(total_reward)
+            # Draw grid elements
+            for i in range(env.grid_size):
+                for j in range(env.grid_size):
+                    cell = grid[i][j]
+                    if cell == 'A':
+                        ax.text(j, i, 'A', ha='center', va='center', fontsize=16, color='red')
+                    elif cell == 'G':
+                        ax.text(j, i, 'G', ha='center', va='center', fontsize=16, color='green')
+                    elif cell == 'K':
+                        ax.text(j, i, 'K', ha='center', va='center', fontsize=12, color='gold')
+                    elif cell == 'T':
+                        ax.text(j, i, 'T', ha='center', va='center', fontsize=12, color='purple')
+                    elif cell == 'X':
+                        ax.text(j, i, 'X', ha='center', va='center', fontsize=12, color='black')
+                    elif cell == 'o':
+                        ax.text(j, i, 'o', ha='center', va='center', fontsize=10, color='blue')
 
-        if (episode + 1) % 10 == 0:
-            success_rate.append(success_count / (episode + 1))
+            # Draw the cumulative heatmap
+            ax.imshow(cumulative_visits, cmap="Reds", alpha=0.3, origin="upper")
 
-        agent.decay_epsilon()
+            # Draw the current episode's path
+            if len(path) > 1:
+                xs, ys = zip(*path)
+                ax.plot(ys, xs, marker='o', color='blue', linewidth=2, markersize=4)
 
-        if (episode + 1) % visualize_every == 0 or episode == episodes - 1:
-            try:
-                path.append(tuple(env.agent_position))
-                grid = env.render(path=path)
+            # Titles and ticks
+            ax.set_title(f"Episode {episode + 1}, Step {steps + 1}")
+            ax.set_xticks([])
+            ax.set_yticks([])
 
-                fig, ax = plt.subplots(figsize=(6, 6))
-                ax.imshow(np.zeros((grid_size, grid_size)), cmap="gray", alpha=0.8)
-                for i in range(grid_size):
-                    for j in range(grid_size):
-                        cell = grid[i][j]
-                        if cell == 'A':
-                            ax.text(j, i, 'A', ha='center', va='center', fontsize=16, color='red')
-                        elif cell == 'G':
-                            ax.text(j, i, 'G', ha='center', va='center', fontsize=16, color='green')
-                        elif cell == 'K':
-                            ax.text(j, i, 'K', ha='center', va='center', fontsize=12, color='gold')
-                        elif cell == 'T':
-                            ax.text(j, i, 'T', ha='center', va='center', fontsize=12, color='purple')
-                        elif cell == 'X':
-                            ax.text(j, i, 'X', ha='center', va='center', fontsize=12, color='black')
-                        elif cell == 'o':
-                            ax.text(j, i, 'o', ha='center', va='center', fontsize=10, color='blue')
-                ax.set_xticks([])
-                ax.set_yticks([])
-                ax.set_title(f"Episode {episode + 1}")
-                plt.tight_layout()
+            # Render the figure and append the frame
+            fig.canvas.draw()
 
-                plt.savefig("frame.png")
-                plt.close()
+            # Capture the frame as RGB
+            frame = np.frombuffer(fig.canvas.tostring_argb(), dtype='uint8')
+            width, height = fig.canvas.get_width_height()
+            frame = frame.reshape(height, width, 3)
+            ims.append(frame)
 
-                try:
-                    frame = Image.open("frame.png")
-                    frames.append(frame.copy())
-                    frame.close()
-                except Exception as e:
-                    print(f"Error loading frame for episode {episode + 1}: {e}")
-            except Exception as e:
-                print(f"Error plotting frame for episode {episode + 1}: {e}")
+            steps += 1
 
-    # Create and save the GIF
-    try:
-        if frames:
-            frames[0].save(
-                output_file,
-                save_all=True,
-                append_images=frames[1:],
-                duration=300,
-                loop=0
-            )
-            print(f"GIF saved as {output_file}")
-        else:
-            print("No valid frames to create a GIF.")
-    except Exception as e:
-        print(f"Error creating GIF: {e}")
+        if steps >= max_steps:
+            print(f"Episode {episode + 1} reached the maximum step limit.")
+        print(f"Completed Episode {episode + 1} in {steps} steps.\n")
 
-    success_rate_percent = (success_count / episodes) * 100
-    print(f"Success Rate: {success_rate_percent:.2f}% ({success_count}/{episodes} episodes)")
+    plt.close()
 
-    # Visualizations
-    plt.figure()
-    plt.plot(episode_rewards)
-    plt.xlabel("Episode")
-    plt.ylabel("Total Reward")
-    plt.title("Reward Progress Over Episodes")
-    plt.show()
-
-    plt.figure()
-    plt.plot(range(10, episodes + 1, 10), success_rate)
-    plt.xlabel("Episode")
-    plt.ylabel("Success Rate")
-    plt.title("Success Rate Over Time")
-    plt.show()
-
-    plt.figure()
-    sns.heatmap(path_visits, annot=False, cmap="Reds")
-    plt.title("Path Visit Heatmap")
-    plt.xlabel("X Position")
-    plt.ylabel("Y Position")
-    plt.show()
+    # Save the frames as a GIF using imageio
+    imageio.mimsave(output_file, ims, fps=10)
+    print(f"GIF saved as {output_file}")
 
 
 if __name__ == "__main__":
-    visualize_extended_dungeon_gif(
-        grid_size=6,
-        episodes=200,
-        visualize_every=50,
-        output_file="extended_dungeon.gif",
-        use_dqn=True  # Set to False for QLearningAgent
-    )
+    # Initialize PPO agent
+    grid_size = 9
+    total_timesteps = 20000
+    agent = PPOAgent(grid_size=grid_size, total_timesteps=total_timesteps)
+
+    # Train the PPO model
+    agent.train()
+
+    # Create the environment for visualization
+    # If using a vectorized environment, access the underlying one
+    if hasattr(agent.env, 'envs') and len(agent.env.envs) > 0:
+        env = agent.env.envs[0].env  # Access the first (and only) environment
+    else:
+        env = agent.env
+
+    # Generate a GIF of the agent's performance across multiple episodes
+    create_gif(model=agent.model, env=env, output_file="agent_path.gif", episodes=12)
