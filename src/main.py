@@ -84,11 +84,16 @@ def create_gif(model, env, output_file="agent_path.gif", episodes=5):
             # Render the figure and append the frame
             fig.canvas.draw()
 
-            # Capture the frame as RGB
+            # Capture the frame as ARGB
             frame = np.frombuffer(fig.canvas.tostring_argb(), dtype='uint8')
             width, height = fig.canvas.get_width_height()
-            frame = frame.reshape(height, width, 3)
+
+            # Convert ARGB to RGB
+            frame = frame.reshape(height, width, 4)  # Reshape to include alpha channel
+            frame = frame[:, :, 1:]  # Remove the alpha channel
             ims.append(frame)
+
+
 
             steps += 1
 
@@ -105,7 +110,7 @@ def create_gif(model, env, output_file="agent_path.gif", episodes=5):
 
 if __name__ == "__main__":
     # Initialize PPO agent
-    grid_size = 9
+    grid_size = 5
     total_timesteps = 20000
     agent = PPOAgent(grid_size=grid_size, total_timesteps=total_timesteps)
 
@@ -120,4 +125,4 @@ if __name__ == "__main__":
         env = agent.env
 
     # Generate a GIF of the agent's performance across multiple episodes
-    create_gif(model=agent.model, env=env, output_file="agent_path.gif", episodes=12)
+    create_gif(model=agent.model, env=env, output_file="agent_path.gif", episodes=10)
